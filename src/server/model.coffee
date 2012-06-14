@@ -377,26 +377,35 @@ module.exports = Model = (db, options) ->
     type = types[type] if typeof type == 'string'
     return callback? 'Type not found' unless type
 
-    data =
-      snapshot:type.create()
-      type:type.name
-      meta:meta or {}
-      v:0
+    # Emit the 'pre-create' event to allow for preloading data into the new document.
+    model.emit 'pre-create', docName, (error, preloadData) ->
+      return callback? 'Error preloading data:' + error if error
+      snapshotData = null
+      if preloadData
+        snapshotData = preloadData
+      else
+        snapshotData = type.create()
 
-    done = (error, dbMeta) ->
-      # dbMeta can be used to cache extra state needed by the database to access the document, like an ID or something.
-      return callback? error if error
+      data =
+        snapshot:snapshotData
+        type:type.name
+        meta:meta or {}
+        v:0
 
-      # From here on we'll store the object version of the type name.
-      data.type = type
-      add docName, null, data, 0, [], dbMeta
-      model.emit 'create', docName, data
-      callback?()
+      done = (error, dbMeta) ->
+        # dbMeta can be used to cache extra state needed by the database to access the document, like an ID or something.
+        return callback? error if error
 
-    if db
-      db.create docName, data, done
-    else
-      done()
+        # From here on we'll store the object version of the type name.
+        data.type = type
+        add docName, null, data, 0, [], dbMeta
+        model.emit 'create', docName, data
+        callback?()
+
+      if db
+        db.create docName, data, done
+      else
+        done()
 
   # Perminantly deletes the specified document.
   # If listeners are attached, they are removed.
