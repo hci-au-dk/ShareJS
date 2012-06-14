@@ -8,20 +8,23 @@ applyToShareJS = (editorDoc, delta, doc) ->
   # I tuned this operation a little bit, for speed.
   startPos = 0  # Get character position from # of chars in each line.
   i = 0         # i goes through all lines.
-
+  
+  if not doc?
+      return
+  oldText = doc.snapshot.split '\n'
+  
   while i < delta.from.line
-    startPos += editorDoc.lineInfo(i).text.length + 1   # Add 1 for '\n'
+    startPos += oldText[i].length + 1   # Add 1 for '\n'
     i++
 
   startPos += delta.from.ch
 
-  if delta.to.line == delta.from.line &&
-     delta.to.ch == delta.from.ch # Then nothing was removed.
+  if delta.to.line == delta.from.line && delta.to.ch == delta.from.ch # Then nothing was removed.
     doc.insert startPos, delta.text.join '\n'
   else
     delLen = delta.to.ch - delta.from.ch
     while i < delta.to.line
-      delLen += editorDoc.lineInfo(i).text.length + 1   # Add 1 for '\n'
+      delLen += oldText[i].length + 1   # Add 1 for '\n'
       i++
     doc.del startPos, delLen
     doc.insert startPos, delta.text.join '\n' if delta.text
@@ -39,14 +42,16 @@ window.sharejs.extendDoc 'attach_cm', (editor, keepEditorContents) ->
   check = ->
     window.setTimeout ->
         editorText = editor.getValue()
-        otText = sharedoc.getValue()
+        otText = sharedoc.getText()
 
         if editorText != otText
           console.error "Text does not match!"
           console.error "editor: #{editorText}"
           console.error "ot:     #{otText}"
           # Replace the editor text with the doc snapshot.
-          editor.setValue sharedoc.getValue()
+          suppress = true
+          editor.setValue sharedoc.getText()
+          suppress = false
       , 0
 
   if keepEditorContents
@@ -70,24 +75,31 @@ window.sharejs.extendDoc 'attach_cm', (editor, keepEditorContents) ->
 
   editor.setOption 'onChange',  editorListener
 
-  @on 'insert', (pos, text) ->
-    suppress = true
-    # All the primitives we need are already in CM's API.
-    editor.replaceRange text, editor.posFromIndex(pos)
-    suppress = false
-    check()
+  insertInEditor = (pos, text) ->
+      suppress = true
+      # All the primitives we need are already in CM's API.
+      editor.replaceRange text, editor.posFromIndex(pos)
+      suppress = false
+      check()
 
-  @on 'delete', (pos, text) ->
-    suppress = true
-    from = editor.posFromIndex pos
-    to = editor.posFromIndex (pos + text.length)
-    editor.replaceRange '', from, to
-    suppress = false
-    check()
+  deleteFromEditor = (pos, text) ->
+      suppress = true
+      from = editor.posFromIndex pos
+      to = editor.posFromIndex (pos + text.length)
+      editor.replaceRange '', from, to
+      suppress = false
+      check()
+
+  @on 'insert', insertInEditor
+
+  @on 'delete', deleteFromEditor
+    
 
   @detach_cm = ->
     # TODO: can we remove the insert and delete event callbacks?
     editor.setOption 'onChange', null
+    @removeListener 'insert', insertInEditor
+    @removeListener 'delete', deleteFromEditor
     delete @detach_cm
 
   return
